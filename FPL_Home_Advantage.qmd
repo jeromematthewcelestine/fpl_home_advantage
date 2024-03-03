@@ -7,14 +7,99 @@ editor: visual
 
 ```{r}
 #| echo: false
+
 library(tidyverse)
+library(ggplot2)
+
+source_string <- 'Source: https://github.com/vaastav/Fantasy-Premier-League; Jerome Williams'
 ```
 
 ## Data
 
-We will use data from the [Fantasy Premier League data](https://github.com/vaastav/Fantasy-Premier-League) project, which I have downloaded separately. The data is stored season by season, so we first combine.
+We will use data from the [Fantasy Premier League data](https://github.com/vaastav/Fantasy-Premier-League) project, which I have downloaded separately. The data is stored season by season, so we first combine. For each season, we have to merge gameweek data (in `merged_gw.csv`) with player information (in `players_raw.csv`)
 
 ```{r}
+
+fpl_data_path <- 'data/Fantasy-Premier-League-master/data/'
+
+load_and_merge_player_and_gameweek_data <- function(season_str) {
+  season_string_dash <- str_replace(season_str, '/', '-')
+  merged_gw <- read_csv(paste0(fpl_data_path, season_string_dash, '/gws/merged_gw.csv'),
+                        show_col_types = FALSE) %>% mutate(season = season_str)
+  players_raw <- read_csv(paste0(fpl_data_path, season_string_dash, '/players_raw.csv'),
+                          show_col_types = FALSE)
+  player_position_data <- players_raw %>% select(id, element_type)
+  gameweek_data <- merged_gw %>% 
+    left_join(player_position_data, by = c('element' = 'id')) %>%
+    mutate(position = case_when(element_type == 1 ~ 'GK',
+                              element_type == 2 ~ 'DEF',
+                              element_type == 3 ~ 'MID',
+                              element_type == 4 ~ 'FWD')
+  )
+}
+load_gameweek_data <- function(season_str) {
+  season_string_dash <- str_replace(season_str, '/', '-')
+  merged_gw <- read_csv(paste0(fpl_data_path, season_string_dash, '/gws/merged_gw.csv'),
+                        show_col_types = FALSE) %>% mutate(season = season_str) %>%
+    mutate(position = if_else(position == 'GKP', 'GK', position))
+}
+
+seasons <- list()
+seasons[['2016/17']] <- load_and_merge_player_and_gameweek_data(season_str = '2016/17')
+seasons[['2017/18']] <- load_and_merge_player_and_gameweek_data(season_str = '2017/18')
+seasons[['2018/19']] <- load_and_merge_player_and_gameweek_data(season_str = '2018/19')
+seasons[['2019/20']] <- load_and_merge_player_and_gameweek_data(season_str = '2019/20')
+seasons[['2020/21']] <- load_gameweek_data(season_str = '2020/21')
+seasons[['2021/22']] <- load_gameweek_data(season_str = '2021/22')
+seasons[['2022/23']] <- load_gameweek_data(season_str = '2022/23')
+gw <- bind_rows(seasons)
+print(nrow(gw))
+```
+We have 166,813 observations (player/gameweek pairs).
+
+Let's ensure we have position data for all observations.
+```{r}
+any_without_position_data <- gw$position %>% is.na() %>% any()
+print(any_without_position_data)
+```
+
+As a check, let's plot the number of observations per season.
+
+```{r}
+
+ggplot(gw) + 
+  geom_bar(aes(x = season)) + 
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  theme_bw() +
+  labs(title = 'Number of gameweek/player observations, by season',
+       subtitle = 'Fantasy Premier League, 2016/17 - 2022/23',
+       x = 'Season',
+       y = 'Count',
+       caption = source_string)
+
+```
+
+Let's also check the number of distinct gameweeks per season. We should have 38 gameweeks per season.
+
+```{r}
+by_season <- gw %>% group_by(season) %>% summarize(n_gameweeks = n_distinct(GW))
+ggplot(by_season) + geom_col(aes(x = season, y = n_gameweeks)) + 
+  theme_bw() +
+  labs(
+    title = 'Gameweeks per season',
+    subtitle = 'Fantasy Premier League, 2016/17 - 2022/23',
+    x = 'Season',
+    y = 'Number of gameweeks',
+    caption = source_string
+  )
+```
+
+## Team-level home advantage
+
+Before we consider home advantage in FPL points for individual players, let's confirm that we see home advantage in team-level outcomes. Specifically, let's plot win rate and goals scored for teams playing at home and teams playing away.
+
+```{r}
+
 
 ```
 

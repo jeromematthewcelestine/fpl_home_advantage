@@ -115,13 +115,61 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <section id="data" class="level2">
 <h2 class="anchored" data-anchor-id="data">Data</h2>
-<p>We will use data from the <a href="https://github.com/vaastav/Fantasy-Premier-League">Fantasy Premier League data</a> project, which I have downloaded separately. The data is stored season by season, so we first combine.</p>
+<p>We will use data from the <a href="https://github.com/vaastav/Fantasy-Premier-League">Fantasy Premier League data</a> project, which I have downloaded separately. The data is stored season by season, so we first combine. For each season, we have to merge gameweek data (in <code>merged_gw.csv</code>) with player information (in <code>players_raw.csv</code>)</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>fpl_data_path <span class="ot">&lt;-</span> <span class="st">'data/Fantasy-Premier-League-master/data/'</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>load_and_merge_player_and_gameweek_data <span class="ot">&lt;-</span> <span class="cf">function</span>(season_str) {</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  season_string_dash <span class="ot">&lt;-</span> <span class="fu">str_replace</span>(season_str, <span class="st">'/'</span>, <span class="st">'-'</span>)</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  merged_gw <span class="ot">&lt;-</span> <span class="fu">read_csv</span>(<span class="fu">paste0</span>(fpl_data_path, season_string_dash, <span class="st">'/gws/merged_gw.csv'</span>),</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>                        <span class="at">show_col_types =</span> <span class="cn">FALSE</span>) <span class="sc">%&gt;%</span> <span class="fu">mutate</span>(<span class="at">season =</span> season_str)</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  players_raw <span class="ot">&lt;-</span> <span class="fu">read_csv</span>(<span class="fu">paste0</span>(fpl_data_path, season_string_dash, <span class="st">'/players_raw.csv'</span>),</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>                          <span class="at">show_col_types =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  player_position_data <span class="ot">&lt;-</span> players_raw <span class="sc">%&gt;%</span> <span class="fu">select</span>(id, element_type)</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>  gameweek_data <span class="ot">&lt;-</span> merged_gw <span class="sc">%&gt;%</span> </span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">left_join</span>(player_position_data, <span class="at">by =</span> <span class="fu">c</span>(<span class="st">'element'</span> <span class="ot">=</span> <span class="st">'id'</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(<span class="at">position =</span> <span class="fu">case_when</span>(element_type <span class="sc">==</span> <span class="dv">1</span> <span class="sc">~</span> <span class="st">'GK'</span>,</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>                              element_type <span class="sc">==</span> <span class="dv">2</span> <span class="sc">~</span> <span class="st">'DEF'</span>,</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>                              element_type <span class="sc">==</span> <span class="dv">3</span> <span class="sc">~</span> <span class="st">'MID'</span>,</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>                              element_type <span class="sc">==</span> <span class="dv">4</span> <span class="sc">~</span> <span class="st">'FWD'</span>)</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>load_gameweek_data <span class="ot">&lt;-</span> <span class="cf">function</span>(season_str) {</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>  season_string_dash <span class="ot">&lt;-</span> <span class="fu">str_replace</span>(season_str, <span class="st">'/'</span>, <span class="st">'-'</span>)</span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>  merged_gw <span class="ot">&lt;-</span> <span class="fu">read_csv</span>(<span class="fu">paste0</span>(fpl_data_path, season_string_dash, <span class="st">'/gws/merged_gw.csv'</span>),</span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>                        <span class="at">show_col_types =</span> <span class="cn">FALSE</span>) <span class="sc">%&gt;%</span> <span class="fu">mutate</span>(<span class="at">season =</span> season_str) <span class="sc">%&gt;%</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(<span class="at">position =</span> <span class="fu">if_else</span>(position <span class="sc">==</span> <span class="st">'GKP'</span>, <span class="st">'GK'</span>, position))</span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>seasons <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>seasons[[<span class="st">'2016/17'</span>]] <span class="ot">&lt;-</span> <span class="fu">load_and_merge_player_and_gameweek_data</span>(<span class="at">season_str =</span> <span class="st">'2016/17'</span>)</span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>seasons[[<span class="st">'2017/18'</span>]] <span class="ot">&lt;-</span> <span class="fu">load_and_merge_player_and_gameweek_data</span>(<span class="at">season_str =</span> <span class="st">'2017/18'</span>)</span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>seasons[[<span class="st">'2018/19'</span>]] <span class="ot">&lt;-</span> <span class="fu">load_and_merge_player_and_gameweek_data</span>(<span class="at">season_str =</span> <span class="st">'2018/19'</span>)</span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>seasons[[<span class="st">'2019/20'</span>]] <span class="ot">&lt;-</span> <span class="fu">load_and_merge_player_and_gameweek_data</span>(<span class="at">season_str =</span> <span class="st">'2019/20'</span>)</span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>seasons[[<span class="st">'2020/21'</span>]] <span class="ot">&lt;-</span> <span class="fu">load_gameweek_data</span>(<span class="at">season_str =</span> <span class="st">'2020/21'</span>)</span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>seasons[[<span class="st">'2021/22'</span>]] <span class="ot">&lt;-</span> <span class="fu">load_gameweek_data</span>(<span class="at">season_str =</span> <span class="st">'2021/22'</span>)</span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>seasons[[<span class="st">'2022/23'</span>]] <span class="ot">&lt;-</span> <span class="fu">load_gameweek_data</span>(<span class="at">season_str =</span> <span class="st">'2022/23'</span>)</span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>gw <span class="ot">&lt;-</span> <span class="fu">bind_rows</span>(seasons)</span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(<span class="fu">nrow</span>(gw))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 166813</code></pre>
+</div>
+</div>
+<p>We have 166,813 observations (player/gameweek pairs).</p>
+<p>Let’s ensure that we have position data for all observations.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>any_without_position_data <span class="ot">&lt;-</span> gw<span class="sc">$</span>position <span class="sc">%&gt;%</span> <span class="fu">is.na</span>() <span class="sc">%&gt;%</span> <span class="fu">any</span>()</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(any_without_position_data)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] FALSE</code></pre>
+</div>
+</div>
 </section>
 <section id="running-code" class="level2">
 <h2 class="anchored" data-anchor-id="running-code">Running Code</h2>
 <p>When you click the <strong>Render</strong> button a document will be generated that includes both content and the output of embedded code. You can embed code like this:</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="sc">+</span> <span class="dv">1</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="sc">+</span> <span class="dv">1</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 2</code></pre>
 </div>
