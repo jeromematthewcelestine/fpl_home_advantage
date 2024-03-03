@@ -1,0 +1,36 @@
+---
+title: "Home Advantage in Fantasy Premier League"
+author: "Jerome Williams"
+format: html
+editor: visual
+---
+
+```{r}
+#| echo: false
+library(tidyverse)
+```
+
+## Data
+
+We will use data from the [Fantasy Premier League data](https://github.com/vaastav/Fantasy-Premier-League) project, which I have downloaded separately. The data is stored season by season, so we first combine.
+
+```{r}
+
+```
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+1 + 1
+```
+
+You can add options to executable code like this
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
