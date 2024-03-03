@@ -4,3 +4,5 @@ export/
 intermediate/
 archive/
 .Rproj.user
+
+/.quarto/

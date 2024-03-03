@@ -5,6 +5,8 @@ format: html
 editor: visual
 ---
 
+Back to [jeromewilliams.net](https://www.jeromewilliams.net).
+
 ```{r}
 
 library(tidyverse)
@@ -12,6 +14,15 @@ library(ggplot2)
 library(plotrix)
 
 source_string <- 'Source: https://github.com/vaastav/Fantasy-Premier-League; Jerome Williams'
+
+theme_jw <- function() { 
+  theme_bw() + 
+    theme(
+      plot.title = element_text(face = 'bold', hjust = 0.5),
+      plot.subtitle = element_text(hjust = 0.5),
+      plot.caption = element_text(hjust = 0)
+    )
+}
 ```
 
 ## Data
@@ -314,10 +325,12 @@ Now that we've established that filtering out observations with '% selected by' 
 
 ```{r}
 
-home_away_stats <- gw %>%
-  filter(pct_selected >= 0.005) %>%
+home_away_data <- gw %>%
+  filter(pct_selected >= 0.05) %>%
   mutate(home_away = if_else(was_home, 'Home', 'Away')) %>%
-  mutate(home_away = as_factor(home_away) %>% fct_relevel('Home')) %>%
+  mutate(home_away = as_factor(home_away) %>% fct_relevel('Home'))
+
+home_away_stats <- home_away_data %>%
   group_by(home_away, season) %>%
   summarize(
     total_points_mean = mean(total_points),
@@ -330,6 +343,7 @@ ggplot(home_away_stats) +
                      ymin = total_points_mean - 2*total_points_se,
                      ymax = total_points_mean + 2*total_points_se,
                      color = home_away)) +
+  theme_bw() +
   labs(
     title = 'Home advantage in FPL points',
     subtitle = 'Fantasy Premier League, 2016/17 - 2022/23',
@@ -341,11 +355,172 @@ ggplot(home_away_stats) +
 Excludes player-gameweek observations where player is selected by less than 0.5% of managers.\n\n',
 source_string)
 )
-  
 
 ```
 
 We have confirmed that home advantage exists in FPL: players score more FPL points on average in gameweeks when their team plays at home than in gameweeks when their team plays away. Following the same pattern as team-level home advantage, FPL home advantage disappears in 2020/21 and is reduced in 2021/22.
 
 ## Sources of home advantage: player position and point-scoring actions
+
+Let's examine the sources of FPL home advantage. FPL points are based on a variety of different point-scoring actions, detailed in the table below.
+
+| FPL point-scoring action | Points |
+|:-------|:-------|
+| Played more than 0 minutes        | 1 |
+| Played more than 60 minutes       | 1 |
+| Goal scored (GK / DEF / MID / FWD)      | 6 / 6 / 5 / 4 |
+| Assist                            | 3 |
+| Every 2 goals conceded (GK / DEF)   | -1 |
+| Clean sheet (GK / DEF / MID)          | 6 / 6 / 1 |
+| Every 3 saves (GK)                | 2 |
+| Yellow card                       | -1 |
+| Red card                          | -3 |
+| Penalty saved (GK)                | 5 |
+| Penalty missed                    | -2 |
+
+Source: [https://fantasy.premierleague.com/help/rules](https://fantasy.premierleague.com/help/rules)
+
+Let's plot the average count for all point-scoring actions by home and away. For this analysis, we will exclude the 2020/21 season, since home advantage did not accrue.
+
+```{r}
+
+
+
+
+df_for_source_analysis <- home_away_data %>%
+  filter(season != '2020/21')
+
+vars_for_all_players <- list('minutes', 
+                             'goals_scored',
+                             'assists',
+                             'bonus',
+                             'red_cards',
+                             'yellow_cards')
+
+calc_stats <- function(df, var_, ...) {
+  tibble(mean = mean(df[var_] %>% pull()),
+         se = std.error(df[var_]))
+}
+
+all_stats <- tibble()
+for (var in vars_for_all_players) {
+  temp <- df_for_source_analysis %>% 
+    group_by(home_away) %>%
+    group_modify(function(df, ...) { calc_stats(df, var, ...) }) %>%
+    mutate(var = var) %>%
+    mutate(var = case_when(var == 'assists' ~ 'Assists',
+                           var == 'goals_scored' ~ 'Goals scored',
+                           var == 'bonus' ~ 'Bonus points',
+                           var == 'minutes' ~ 'Minutes played',
+                           var == 'red_cards' ~ 'Red cards',
+                           var == 'yellow_cards' ~ 'Yellow cards'))
+  all_stats <- all_stats %>% bind_rows(temp)
+}
+all_stats
+
+def_gk <- df_for_source_analysis %>% filter(position == 'GK' | position == 'DEF')
+def_gk_vars <- list('clean_sheets', 'goals_conceded')
+
+def_gk_stats <- tibble()
+for (var_ in def_gk_vars) {
+  temp <- def_gk %>% 
+    group_by(home_away) %>%
+    group_modify(function(df, ...) { calc_stats(df, var_, ...) }) %>%
+    mutate('var' = var_)
+  def_gk_stats <- def_gk_stats %>% bind_rows(temp)
+}
+def_gk_stats <- def_gk_stats %>%
+  mutate(var = case_when(var == 'clean_sheets' ~ 'Clean sheets',
+                         var == 'goals_conceded' ~ 'Goals conceded'))
+
+gk_only <- df_for_source_analysis %>% filter(position == 'GK')
+gk_only_stats <- gk_only %>%
+  group_by(home_away) %>%
+  group_modify(function(df, ...) { calc_stats(df, 'saves', ...)}) %>%
+  mutate('var' = 'Saves')
+
+
+plotting_data <- all_stats %>% 
+  bind_rows(def_gk_stats) %>%
+  bind_rows(gk_only_stats) %>%
+  mutate(var = fct_relevel(var, c('Goals scored', 'Assists', 'Minutes played', 
+                                  'Bonus points', 'Red cards', 'Yellow cards',
+                                  'Goals conceded', 'Clean sheets', 'Saves')))
+
+ggplot(plotting_data, aes(x = home_away, color = home_away)) +
+  geom_point(aes(y = mean)) +
+  geom_linerange(aes(ymin = mean - 1.96 * se, ymax = mean + 1.96 * se)) +
+  facet_wrap(~var, scales = 'free') +
+  labs(title = 'Home advantage in FPL point-scoring actions',
+       subtitle = 'Fantasy Premier League, 2016/17 to 2022/23',
+       caption = 'Source: https://github.com/vaastav/Fantasy-Premier-League; Jerome Williams
+
+Note: Plots show means and 95% confidence intervals.
+Calculations exclude 2020/21 season and player-gameweeks with selected-by rates lower than 0.5%.
+\'Goals conceded\' and \'Clean sheets\' calculated for defenders and goalkeepers only. \'Saves\' calculated for goalkeepers only.',
+      x = '',
+       y = '', 
+       color = '') +
+  theme_bw() + theme(legend.position = 'none')
+
+```
+
+The plot shows that there are significant difference between home and away matches in most FPL point-scoring actions. (I omit penalties missed and penalties saved above because they are rare events.)
+
+Unsurprisingly, given their rarity, there is no difference detectable difference between home and away games with respect to the average number of red cards.
+
+Perhaps surprisingly, the average number of minutes played is slightly higher for home games than for away games. The difference is small however (approximately 68.5 minutes for home games vs 67.75 minutes for away games) and is therefore unlikely to be meaningful for FPL points.
+
+Let's also examine home advantage by player position (GK, DEF, MID, and FWD). Given that most point-scoring actions, including both attacking actions (goals, assists) and defensive actions (clean sheets, goals conceded, saves), exhibit home advantage, we expect to find home advantage across all four positions as well.
+
+```{r}
+
+df_for_position_analysis <- home_away_data %>%
+  filter(season != '2020/21')
+
+
+var = 'total_points'
+calculate_stats <- function(df) {
+  mean_ <- mean(df[var] %>% pull())
+  se_ <- std.error(df[var])
+  tibble(
+    position = df$position[1],
+    home_away = df$home_away[1],
+    mean = mean_,
+    se = se_)
+}
+
+# gw %>%
+#   split(list(.$season, .$was_home)) %>%
+#   map(calculate_stats) %>%
+#   list_rbind()
+pos_stats <- df_for_position_analysis %>%
+  split(list(.$position, .$home_away)) %>%
+  map(calculate_stats) %>%
+  list_rbind() %>%
+  mutate(
+    position = as_factor(position) %>% fct_relevel(c('GK', 'DEF', 'MID', 'FWD'))
+  )
+
+
+ggplot(pos_stats, aes(x = position, color = home_away, group = home_away)) + 
+  geom_point(aes(y = mean)) +
+  geom_linerange(aes(ymin = mean - 2 * se, ymax = mean + 2 * se)) +
+  theme_jw() +
+  labs(title = 'Home advantage in FPL points, by player position',
+       subtitle = 'Fantasy Premier League, 2016/17 to 2022/23',
+       x = '',
+       y = 'Points per player per gameweek',
+       color = '',
+       caption = 'Source: https://github.com/vaastav/Fantasy-Premier-League; Jerome Williams
+
+Plot shows means and 95% confidence intervals.
+Calculations exclude 2020/21 season and player-gameweeks with selected-by rates lower than 0.5%.')
+
+```
+
+Indeed, we do find home advantage in FPL points for all four positions. Midfielders seem to have the largest difference (as well as the highest number of points on average). The overall statistics are also interesting. Midfielders playing at home (who are selected by at least 0.5% of managers) score a little over 4 FPL points in the average gameweek.
+
+
+
 
