@@ -6,15 +6,17 @@ editor: visual
 ---
 
 ```{r}
-#| echo: false
 
 library(tidyverse)
 library(ggplot2)
+library(plotrix)
 
 source_string <- 'Source: https://github.com/vaastav/Fantasy-Premier-League; Jerome Williams'
 ```
 
 ## Data
+
+### Fantasy Premier League data
 
 We will use data from the [Fantasy Premier League data](https://github.com/vaastav/Fantasy-Premier-League) project, which I have downloaded separately. The data is stored season by season, so we first combine. For each season, we have to merge gameweek data (in `merged_gw.csv`) with player information (in `players_raw.csv`)
 
@@ -57,6 +59,22 @@ print(nrow(gw))
 ```
 We have 166,813 observations (player/gameweek pairs).
 
+Later on, we will need to look 'Percent selected by,' for each player/gaemweek observation, i.e., the percentage of FPL managers who selected a given player in a give gameweek. To calculate 'Percent selected by,' we need data on the total number of managers, which we have from the *Manager Count* dataset.
+
+```{r}
+#| echo: false
+
+manager_count <- read_csv('data/manager_count.csv') %>% 
+  mutate(manager_count = gw38count) %>%
+  select(season, manager_count)
+
+gw <- gw %>% 
+  left_join(manager_count, by = "season") %>%
+  mutate(pct_selected = selected / manager_count)
+
+```
+
+
 Let's ensure we have position data for all observations.
 ```{r}
 any_without_position_data <- gw$position %>% is.na() %>% any()
@@ -94,28 +112,240 @@ ggplot(by_season) + geom_col(aes(x = season, y = n_gameweeks)) +
   )
 ```
 
+### Team level data from football-data.co.uk
+
+Our FPL data does not have team-level results for every season we are interested in, so we'll also use data from <www.football-data.co.uk>. Let's load this data as well.
+
+```{r}
+
+fd_data_path <- 'data/footballdata_co_uk/';
+
+load_fd_data <- function(season_string) {
+  season_no_slash <- str_replace(season_string, '/', '') %>% str_replace('20', '')
+  season <- read_csv(
+    paste0(fd_data_path, 'E0_', season_no_slash, '.csv'),
+    show_col_types = FALSE
+    ) %>%
+    mutate(season = season_string)
+}
+
+season_strings <- c('2016/17',
+                    '2017/18',
+                    '2018/19',
+                    '2019/20',
+                    '2020/21',
+                    '2021/22',
+                    '2022/23')
+
+fd <- lmap(season_strings, load_fd_data) %>% 
+  bind_rows()
+```
+
 ## Team-level home advantage
 
 Before we consider home advantage in FPL points for individual players, let's confirm that we see home advantage in team-level outcomes. Specifically, let's plot win rate and goals scored for teams playing at home and teams playing away.
 
+We will use the <football-data.co.uk> dataset for this. Because the data has a single row for each match (with e.g. home goals and away goals stored in separate fields), let's reshape so that we have a single row for each match-team observation.
+
 ```{r}
 
+fd_home <- fd %>% select(season,
+                      date = Date,
+                      team = HomeTeam,
+                      opponent = AwayTeam,
+                      goals_scored = FTHG, # full time home goals
+                      goals_conceded = FTAG, # full time away goals
+                      FTR) %>%
+  mutate(home_away = 'Home',
+         result = case_when(FTR == 'H' ~ 'W', # full time result
+                            FTR == 'A' ~ 'L',
+                            FTR == 'D' ~ 'D'),
+         win = (result == 'W'))
+fd_away <- fd %>% select(season,
+                      date = Date,
+                      team = AwayTeam,
+                      opponent = HomeTeam,
+                      goals_scored = FTAG,
+                      goals_conceded = FTHG,
+                      FTR) %>%
+  mutate(home_away = 'Away',
+         result = case_when(FTR == 'H' ~ 'L',
+                            FTR == 'A' ~ 'W',
+                            FTR == 'D' ~ 'D'),
+         win = (result == 'W'))
+
+fd2 <- bind_rows(fd_home, fd_away)
+```
+
+### Team-level home advantage in win rate
+
+Now that we've have created our home/away dataset, let's plot the mean win rate, by season and by home/away.
+
+```{r}
+
+win_rate_stats <- fd2 %>% 
+  group_by(season, home_away) %>% 
+  summarize(mean = mean(win), 
+            se = std.error(win),
+            n = n()) %>%
+  mutate(home_away = fct_relevel(home_away, 'Home', 'Away'))
+
+ggplot(win_rate_stats, aes(x = season, color = home_away)) + 
+  geom_point(aes(y = mean)) + 
+  geom_linerange(aes(ymin = mean - 1.96 * se,
+                     ymax = mean + 1.96 * se)) +
+  theme_bw() + 
+  labs(
+    title = 'Home and away win rates, by season',
+    subtitle = 'English Premier League, 2016/17 - 2022/23',
+    color = '',
+    x = '',
+    y = 'Win rate',
+    caption = 'Source: football-data.co.uk; Jerome Williams'
+  )
+```
+
+
+Interestingly, we see that home advantage disappeared completely in the 2020/21 season. The 2020/21 was played "behind closed doors," i.e., without supporters in stadiums, because of the COVID-19 pandemic. It is well documented that the behind-closed-doors season resulted in diminished home advantage. Indeed, this natural experiment has provided insight into the sources of home advantage ....
+
+Home advantage is also smaller in the 2021/22 season, when a limited numbers of supporters began to be allowed back into stadiums.
+
+Apart from 2020/21 and 2021/22, home advantage in other seasons is pronounced and fairly consistent. Home win rates tend to be between 0.45 to 0.5, while away win rates tend to be between approximately 0.28 and 0.35.
+
+### Team-level home advantage in goals scored
+
+Let's check whether home advantage also shows up in goals scored. It should, given the likely high correlation between goals scored and win rate.
+
+```{r}
+
+win_rate_stats <- fd2 %>% 
+  group_by(season, home_away) %>% 
+  summarize(mean = mean(goals_scored), 
+            se = std.error(goals_scored),
+            n = n()) %>%
+  mutate(home_away = fct_relevel(home_away, 'Home', 'Away'))
+
+ggplot(win_rate_stats, aes(x = season, color = home_away)) + 
+  geom_point(aes(y = mean)) + 
+  geom_linerange(aes(ymin = mean - 1.96 * se,
+                     ymax = mean + 1.96 * se)) +
+  theme_bw() + 
+  labs(
+    title = 'Home and away goals scored, by season',
+    subtitle = 'English Premier League, 2016/17 - 2022/23',
+    color = '',
+    x = '',
+    y = 'Goals scored',
+    caption = 'Source: football-data.co.uk; Jerome Williams'
+  )
 
 ```
 
-## Running Code
 
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+Indeed, we see a similar home advantage in goals scored with the effect disappearing in 2020/21 and smaller in 2021/22. Outside of those two seasons, home teams tend to score 1.5-1.6 goals, on average, while away teams tend to score 1.15-1.25 goals, on average.
+
+
+## Home advantage in player points
+
+Now that we've confirmed that home advantage obtains at the team-level, let's turn to our question of interest: do players playing at home score more FPL points on average than players playing away?
+
+To answer this question, we'll turn the Fantasy Premier League dataset. 
+
+### Home advantage in FPL points per player per gameweek
+
+#### Filtering to FPL-relevant players
+
+The FPL game generally includes a complete squad for each Premier League team. However, a team's complete squad generally includes several players who play only a small number of minutes over the course of a season and who therefore tend not to be relevant to the game. We want to exclude these players from the analysis: they will generally score zero points, whether or not their team plays at home or away. We want to focus instead on the players whom FPL managers would actually select. To restrict to game-relevant players, I filter to players who are selected by at least 0.5% of managers in the relevant gameweek.
+
+Before filtering, let's check the average minutes played and average FPL points for included and excluded observations. We
 
 ```{r}
-1 + 1
+
+gw_check <- gw %>% 
+  mutate(included = if_else(pct_selected >= 0.005, 'Included', 'Excluded'))
+
+ggplot(gw_check) + 
+  geom_histogram(aes(x = minutes), binwidth = 2) +
+  facet_grid(included ~ .) +
+  theme_bw() + 
+  scale_y_continuous(labels = scales::comma_format()) +
+  labs(title = 'Minutes played, by exclusion status',
+       subtitle = 'Fantasy Premier League, 2016/17 - 2022/23',
+       y = 'Observations',
+       x = 'Minutes played',
+       caption = '
+Excluded observations are gameweek/player pairs where "% managers selected by" is less \nthan 0.5%.
+
+Source: https://github.com/vaastav/Fantasy-Premier-League; Jerome Williams')
+
 ```
 
-You can add options to executable code like this
+The plot above shows that, by dropping player/gameweek observation with selection rates less than 0.5%, we mostly exclude non-playing players. Included observations include many with zero minutes played, but that is to be expected: there is nothing stopping a player owned by many managers from playing zero minutes in a particular, whether because of injury or rotation or any othe reason.
+
+Let's also compare FPL points scored for included/excluded observations.
 
 ```{r}
-#| echo: false
-2 * 2
+
+gw_check <- gw %>% 
+  mutate(included = if_else(pct_selected >= 0.005, 'Included', 'Excluded'))
+
+ggplot(gw_check) + 
+  geom_histogram(aes(x = total_points), binwidth = 1) +
+  facet_grid(included ~ .) +
+  theme_bw() + 
+  scale_y_continuous(labels = scales::comma_format()) +
+  labs(title = 'Gameweek FPL points, by exclusion status',
+       subtitle = 'Fantasy Premier League, 2016/17 - 2022/23',
+       y = 'Observations',
+       x = 'Gameweek FPL points',
+       caption = '
+Excluded observations are gameweek/player pairs where "% managers selected by" is less \nthan 0.5%.
+
+Source: https://github.com/vaastav/Fantasy-Premier-League; Jerome Williams')
+
+
+```
+As expected, excluded observations are more likely to zero score FPL points than included observations.
+
+## Plotting home advantage
+
+Now that we've established that filtering out observations with '% selected by' less than 0.5% is sensible, let's proceed with analyzing player-level home advantage in FPL points.
+
+```{r}
+
+home_away_stats <- gw %>%
+  filter(pct_selected >= 0.005) %>%
+  mutate(home_away = if_else(was_home, 'Home', 'Away')) %>%
+  mutate(home_away = as_factor(home_away) %>% fct_relevel('Home')) %>%
+  group_by(home_away, season) %>%
+  summarize(
+    total_points_mean = mean(total_points),
+    total_points_se = std.error(total_points)
+  )
+
+ggplot(home_away_stats) +
+  geom_point(aes(x = season, y = total_points_mean, color = home_away)) + 
+  geom_linerange(aes(x = season, 
+                     ymin = total_points_mean - 2*total_points_se,
+                     ymax = total_points_mean + 2*total_points_se,
+                     color = home_away)) +
+  labs(
+    title = 'Home advantage in FPL points',
+    subtitle = 'Fantasy Premier League, 2016/17 - 2022/23',
+    x = '',
+    y = 'Points per player per gameweek',
+    color = '',
+    caption = paste0(
+'Plot shows means and 95% confidence intervals.
+Excludes player-gameweek observations where player is selected by less than 0.5% of managers.\n\n',
+source_string)
+)
+  
+
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+We have confirmed that home advantage exists in FPL: players score more FPL points on average in gameweeks when their team plays at home than in gameweeks when their team plays away. Following the same pattern as team-level home advantage, FPL home advantage disappears in 2020/21 and is reduced in 2021/22.
+
+## Sources of home advantage: player position and point-scoring actions
+
